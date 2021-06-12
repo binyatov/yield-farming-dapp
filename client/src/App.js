@@ -1,70 +1,114 @@
 import React, { Component } from "react";
-import SimpleStorageContract from "./contracts/SimpleStorage.json";
+import YieldFarm from "./contracts/YieldFarm.json";
+import DolToken from "./contracts/DolToken.json";
+import AznToken from "./contracts/AznToken.json";
 import getWeb3 from "./getWeb3";
-
 import "./App.css";
+import Nav from "./Nav";
+import Farm from "./Farm";
+import spinner from "./spinner.gif";
 
 class App extends Component {
-  state = { storageValue: 0, web3: null, accounts: null, contract: null };
+  state = {
+    web3: null,
+    account: "0x0",
+    dol: {},
+    azn: {},
+    farm: {},
+    dolBalance: "0",
+    aznBalance: "0",
+    stakingBalance: "0",
+    loading: true,
+  };
 
   componentDidMount = async () => {
     try {
-      // Get network provider and web3 instance.
       const web3 = await getWeb3();
-
-      // Use web3 to get the user's accounts.
+      this.setState({ web3 });
       const accounts = await web3.eth.getAccounts();
-
-      // Get the contract instance.
+      this.setState({ account: accounts[0] });
       const networkId = await web3.eth.net.getId();
-      const deployedNetwork = SimpleStorageContract.networks[networkId];
-      const instance = new web3.eth.Contract(
-        SimpleStorageContract.abi,
-        deployedNetwork && deployedNetwork.address,
-      );
 
-      // Set web3, accounts, and contract to the state, and then proceed with an
-      // example of interacting with the contract's methods.
-      this.setState({ web3, accounts, contract: instance }, this.runExample);
+      const dolDeployed = DolToken.networks[networkId];
+      if (dolDeployed) {
+        const dol = new web3.eth.Contract(DolToken.abi, dolDeployed.address);
+        this.setState({ dol });
+        let dolBalance = await dol.methods.balanceOf(this.state.account).call();
+        this.setState({ dolBalance: dolBalance.toString() });
+      } else {
+        alert(`Failed to load web3, accounts, or contract. Check console for details.`);
+      }
+
+      const aznDeployed = AznToken.networks[networkId];
+      if (aznDeployed) {
+        const azn = new web3.eth.Contract(AznToken.abi, aznDeployed.address);
+        this.setState({ azn });
+        let aznBalance = await azn.methods.balanceOf(this.state.account).call();
+        this.setState({ aznBalance: aznBalance.toString() });
+      } else {
+        alert(`Failed to load web3, accounts, or contract. Check console for details.`);
+      }
+
+      const farmDeployed = YieldFarm.networks[networkId];
+      if (farmDeployed) {
+        const farm = new web3.eth.Contract(YieldFarm.abi, farmDeployed.address);
+        this.setState({ farm });
+        let balance = await farm.methods.stakingBalance(this.state.account).call();
+        this.setState({ stakingBalance: balance.toString() });
+      } else {
+        alert(`Failed to load web3, accounts, or contract. Check console for details.`);
+      }
+      this.setState({ loading: false });
     } catch (error) {
       // Catch any errors for any of the above operations.
-      alert(
-        `Failed to load web3, accounts, or contract. Check console for details.`,
-      );
+      alert(`Failed to load web3, accounts, or contract. Check console for details.`);
       console.error(error);
     }
   };
 
-  runExample = async () => {
-    const { accounts, contract } = this.state;
+  stakeTokens = (amount) => {
+    this.setState({ loading: true });
+    this.state.dol.methods
+      .approve(this.state.farm._address, amount)
+      .send({ from: this.state.account })
+      .on("transactionHash", (hash) => {
+        this.state.farm.methods
+          .stakeTokens(amount)
+          .send({ from: this.state.account })
+          .on("transactionHash", (hash) => {
+            this.setState({ loading: false });
+          });
+      });
+  };
 
-    // Stores a given value, 5 by default.
-    await contract.methods.set(5).send({ from: accounts[0] });
-
-    // Get the value from the contract to prove it worked.
-    const response = await contract.methods.get().call();
-
-    // Update state with the result.
-    this.setState({ storageValue: response });
+  unstakeTokens = (amount) => {
+    this.setState({ loading: true });
+    this.state.farm.methods
+      .unstakeTokens()
+      .send({ from: this.state.account })
+      .on("transactionHash", (hash) => {
+        this.setState({ loading: false });
+      });
   };
 
   render() {
-    if (!this.state.web3) {
-      return <div>Loading Web3, accounts, and contract...</div>;
-    }
     return (
-      <div className="App">
-        <h1>Good to Go!</h1>
-        <p>Your Truffle Box is installed and ready.</p>
-        <h2>Smart Contract Example</h2>
-        <p>
-          If your contracts compiled and migrated successfully, below will show
-          a stored value of 5 (by default).
-        </p>
-        <p>
-          Try changing the value stored on <strong>line 40</strong> of App.js.
-        </p>
-        <div>The stored value is: {this.state.storageValue}</div>
+      <div>
+        <Nav account={this.state.account} />
+        <div className="app-main">
+          {this.state.loading ? (
+            <img className="spinner" alt="spinner" src={spinner} />
+          ) : (
+            <Farm
+              dolBalance={this.state.dolBalance}
+              aznBalance={this.state.aznBalance}
+              stakingBalance={this.state.stakingBalance}
+              stakeTokens={this.stakeTokens}
+              unstakeTokens={this.unstakeTokens}
+              web3={this.state.web3}
+            />
+          )}
+        </div>
       </div>
     );
   }
